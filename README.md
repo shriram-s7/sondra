@@ -1,140 +1,130 @@
 # Sondra: Personal Music Streaming Platform
 
-Sondra is a private, lightweight, and high-fidelity music streaming system. It streams your personal audio catalog stored in Google Drive directly to client devices through a secure FastAPI proxy backend and an elegant React-based admin dashboard.
+A private music streaming system for your own audio collection. Your songs stay in a Google Drive folder; a FastAPI backend reads them through the Drive API, indexes tags and cover art, and streams them to a React admin dashboard and to Flutter apps for Android and Windows.
 
----
+**Links:** [GitHub](https://github.com/shriram-s7/sondra)
 
-## Architecture Overview
-- **Backend:** Python FastAPI + SQLAlchemy (SQLite database).
-- **File Storage:** Google Drive (Read-only proxy streaming).
-- **Admin Dashboard:** React + Vite (Served statically by FastAPI at `/admin`).
-- **Clients:** Desktop browser admin panel and mobile/desktop apps.
+## Overview
 
----
+Commercial streaming services do not carry your own rips and recordings, and copying a large library onto every device is tedious. Sondra treats Google Drive as the single source of truth: each subfolder of a chosen root folder becomes a playlist, a background sync scans the folders and extracts metadata, and the backend proxies the audio so clients never need Drive credentials. The database is disposable, because on a fresh start the backend rebuilds it from Drive. It is a single-user system with one admin login.
 
-## Setup Guide (One Time)
+## Features
 
-Follow these steps to authorize Google Drive access and boot the application:
+**Backend**
+- Sync service that scans the Drive root folder on an interval, reads tags and embedded cover art (mutagen) for `.mp3`, `.flac`, `.m4a` and `.wav` files, and pushes Server-Sent Events so connected clients refresh.
+- Streaming through a read-only proxy with range support, a direct-link option with refresh, and a listen counter.
+- Playlists (one per Drive subfolder), song search, play history and a "continue listening" list.
+- JWT login for a single admin, with password change.
 
-### 1. Configure Google Cloud Console Credentials
-1. Go to the [Google Cloud Console](https://console.cloud.google.com/).
-2. Create a **New Project**.
-3. Search for and enable the **Google Drive API** in your project.
-4. Navigate to the **Credentials** screen:
-   - Click **Create Credentials** → select **OAuth client ID**.
-   - If prompted, configure the OAuth Consent Screen (select **External**, configure your user details, and add the `.../auth/drive.readonly` scopes).
-   - Set the Application Type to **Desktop app**.
-   - Download the generated JSON credentials file and rename it to `credentials.json`.
-5. Put `credentials.json` into the `sondra/backend/` directory.
+**Admin dashboard** (React, served at `/admin/` or deployed separately)
+- Dashboard, library, playlists and settings views, with a player and selectable colour palettes.
 
-### 2. Configure Environment Variables
-1. Duplicate the `.env.example` file in the project folder and name it `.env`.
-2. Open `.env` and configure:
-   - `ADMIN_USERNAME`: Admin login username.
-   - `ADMIN_PASSWORD`: Admin login password (customizable from Settings).
-   - `JWT_SECRET`: A secure random secret key.
-   - `GDRIVE_ROOT_FOLDER_ID`: The long ID from your "MUSIC ALL" Google Drive folder URL (e.g. `drive.google.com/drive/u/0/folders/GDRIVE_ROOT_FOLDER_ID`).
-   - `SYNC_INTERVAL_SECONDS`: Background directory synchronization check frequency (defaults to `30` seconds).
+**Flutter app** (`app/`, Android and Windows)
+- Playback with background audio and media controls, queue, now-playing screen and a mini player.
+- Offline playlists and downloads, plus Windows system media transport controls.
 
-### 3. Launch the Server & Authorize
-1. Double-click `start.bat` (on Windows) or run `./start.sh` (on Linux/macOS) in your terminal.
-2. During the first startup, a browser window will automatically open asking you to sign in with your Google Account to authorize Google Drive read access.
-3. Grant authorization. A `token.json` file will be created inside the `sondra/backend/` directory to cache your credentials securely.
-4. Open **[http://localhost:8000/admin/](http://localhost:8000/admin/)** in your web browser.
-5. Log in with your configured admin credentials.
+## How it works
 
----
-
-## Daily Use
-- **Manage Playlists & Songs:**
-  - Manually upload song files (`.mp3`, `.flac`, `.m4a`, `.wav`) to subfolders inside the `MUSIC ALL` Google Drive folder.
-  - Each subfolder acts as a **Playlist** inside Sondra.
-  - The backend sync service scans your folders periodically (every 30s) and downloads/extracts track tags and base64 cover art.
-  - Any connected apps or browser tabs receive Server-Sent Events (SSE) updates and refresh their UI dynamically on completed syncs.
-
----
-
-## Deploy to Render (Backend API)
-
-You can deploy the backend to Render's free tier. Since SQLite files reset on redeploys, Sondra automatically runs a full library synchronization on startup so the database is rebuilt from your Google Drive (which remains the single source of truth).
-
-### 1. Retrieve JSON String Configurations
-To deploy file-less, you need to copy the JSON strings of your Google credentials into Render environment variables:
-1. Open `sondra/backend/credentials.json` (or `creds.json`) and copy its **entire text content** (the raw client secrets JSON string).
-2. Open `sondra/backend/token.json` and copy its **entire text content** (the OAuth access token JSON string generated after your local login).
-
-### 2. Configure Render Web Service
-1. Create a new Web Service on Render, connect your Git repository, and select **Python** as the environment.
-2. Render will automatically parse `render.yaml` if you choose "Blueprint" deployment, or you can create it manually using these details:
-   - **Build Command:** `pip install -r backend/requirements.txt`
-   - **Start Command:** `cd backend && uvicorn main:app --host 0.0.0.0 --port $PORT`
-3. Add the following Environment Variables in the Render settings page:
-   - `ADMIN_USERNAME`: Your custom login username (e.g. `shriram`).
-   - `ADMIN_PASSWORD`: Your custom login password.
-   - `JWT_SECRET`: Your custom encryption key.
-   - `GDRIVE_ROOT_FOLDER_ID`: Your Google Drive folder URL or ID.
-   - `GDRIVE_CREDS_JSON`: (Paste the entire content of `credentials.json` copied in Step 1).
-   - `GDRIVE_TOKEN_JSON`: (Paste the entire content of `token.json` copied in Step 1).
-   - `CORS_ORIGINS`: Your Vercel admin site URL (e.g., `https://sondra-admin.vercel.app`).
-   - `SYNC_INTERVAL_SECONDS`: `60`
-
----
-
-## Deploy to Vercel (Admin Frontend)
-
-You can deploy the React admin dashboard to Vercel separately for fast static loading.
-
-1. Connect your repository to Vercel.
-2. Configure project settings:
-   - **Root Directory:** `admin`
-   - **Build Command:** `npm run build`
-   - **Output Directory:** `dist`
-3. Set the following environment variable:
-   - `VITE_API_URL`: The URL of your Render backend API (e.g., `https://sondra-backend-cxkc.onrender.com`).
-4. Vercel will build and serve your app. Vercel routes are pre-configured to fallback to SPA indexing using the [vercel.json](file:///e:/PROJECT%20SONDRA/sondra/admin/vercel.json) settings.
-
----
-
-## Keep Backend Awake (Free)
-
-To prevent your Render free tier instance from spinning down and sleeping:
-1. Go to [UptimeRobot](https://uptimerobot.com/) and create a free account.
-2. Click **Add New Monitor**.
-3. Select **Monitor Type:** `HTTP(s)`
-4. Set **Friendly Name:** `Sondra Backend`
-5. Set **URL (or IP):** `https://your-render-url.onrender.com/health` (replace with your actual Render backend URL).
-6. Set **Monitoring Interval:** Every `14 minutes`.
-7. Save. This will ping your API periodically, keeping the container active.
-
----
-
-## Build Client Applications
-
-First, ensure you have navigated to the app directory:
-```bash
-cd sondra/app
+```mermaid
+flowchart LR
+  GD[(Google Drive: MUSIC folder, one subfolder per playlist)] -->|read-only API| SY[Sync service: tags + cover art]
+  SY --> DB[(SQLite)]
+  GD -->|stream proxy| ST[Stream routes]
+  DB --> API[FastAPI: /api auth, songs, playlists, stream, sync, history]
+  ST --> API
+  API -->|REST + SSE| AD[React admin dashboard]
+  API -->|REST + audio| FL[Flutter app: Android / Windows]
 ```
 
-### 1. Build Android APK
-1. Run the compilation command:
-   ```bash
-   flutter build apk --release
-   ```
-2. The compiled APK is saved at:
-   `app/build/app/outputs/flutter-apk/app-release.apk`
-3. Transfer `app-release.apk` to your phone and install it.
-4. Open the app, type in your server URL (e.g., `https://sondra-backend-cxkc.onrender.com`), log in with your admin credentials, and listen to music!
+On startup (and on a timer) the backend syncs the library. Because free hosting resets the SQLite file on each redeploy, a full sync runs at startup so the database is rebuilt from Drive. Google credentials can be supplied as files locally or as environment variables on a host with no persistent disk.
 
-### 2. Build Windows Executable & Installer
-1. Run the Windows release compile command:
-   ```bash
-   flutter build windows --release
-   ```
-2. The standalone output directory is created at:
-   `app/build/windows/x64/runner/Release/`
-3. To package this bundle into a single self-contained `.exe` setup installer:
-   - Open **Inno Setup** compiler on Windows.
-   - Open the compiler script at: [inno_setup.iss](file:///e:/PROJECT%20SONDRA/sondra/app/windows/inno_setup.iss).
-   - Click **Compile** (or press `Ctrl+F9`).
-   - The standalone installer `SondraSetup.exe` will be built inside:
-     `app/build/windows/installer/SondraSetup.exe`
+## Tech stack
+
+| Layer | Technology |
+|---|---|
+| Backend | Python, FastAPI, SQLAlchemy, SQLite, python-jose (JWT), mutagen, httpx |
+| Storage | Google Drive API (`drive.readonly`) via google-api-python-client |
+| Admin UI | React, TypeScript, Vite |
+| Client apps | Flutter, Riverpod, just_audio, audio_service, dio |
+| Hosting | Render (API), Vercel (admin UI), optional UptimeRobot ping |
+| Windows installer | Inno Setup (`app/windows/inno_setup.iss`) |
+
+## Project structure
+
+```text
+backend/    FastAPI app: main.py, models.py, database.py, gdrive.py, routers/ (auth, songs, playlists, stream, sync, history), static/ (built admin UI)
+admin/      React + Vite admin dashboard source
+app/        Flutter client (lib/ providers, screens, services, widgets; android/ and windows/ platform code)
+start.bat, start.sh   local launchers
+render.yaml, Procfile   Render deployment
+.env.example            environment variable template
+```
+
+## Getting started
+
+Prerequisites: Python 3, a Google account, and (for the admin UI source or the apps) Node.js and Flutter.
+
+### 1. Google Cloud credentials (one time)
+
+1. In the [Google Cloud Console](https://console.cloud.google.com/) create a project and enable the **Google Drive API**.
+2. Create an **OAuth client ID** of type **Desktop app** (configure the consent screen as External and add the `drive.readonly` scope), download the JSON and save it as `backend/credentials.json`.
+
+### 2. Environment variables
+
+Copy `.env.example` to `.env` and set (see the file for placeholders):
+
+| Variable | Purpose |
+|---|---|
+| `ADMIN_USERNAME`, `ADMIN_PASSWORD` | the single admin login (the password can be changed from Settings) |
+| `JWT_SECRET` | secret used to sign login tokens; use a long random value |
+| `GDRIVE_ROOT_FOLDER_ID` | ID (or URL) of your music root folder |
+| `GDRIVE_OAUTH_CREDS` | path to the OAuth credentials file (default `credentials.json`) |
+| `SYNC_INTERVAL_SECONDS` | sync frequency; the code defaults to 900 |
+| `GDRIVE_CREDS_JSON`, `GDRIVE_TOKEN_JSON` | the credentials and token JSON as strings, for hosts without files (Render) |
+| `CORS_ORIGINS` | allowed origins for a separately hosted admin UI |
+
+### 3. Run it
+
+**Windows:** double-click `start.bat`. **Linux / macOS:** `./start.sh`.
+
+The first start opens a browser to authorise read-only Drive access and writes `backend/token.json`. Then open http://localhost:8000/admin/ and sign in with your admin credentials. Never commit `credentials.json`, `token.json` or `.env`.
+
+## Usage
+
+- Upload songs to subfolders of your Drive root folder; each subfolder is a playlist.
+- The sync picks them up on the next interval (or trigger one from the admin dashboard), and open clients refresh through SSE.
+- Open the admin dashboard to browse and play, or connect a Flutter app by entering your server URL and admin login.
+
+## Deployment
+
+**Backend on Render:** use `render.yaml` (Blueprint) or create a Web Service manually with build command `pip install -r backend/requirements.txt` and start command `cd backend && uvicorn main:app --host 0.0.0.0 --port $PORT`. Set `ADMIN_USERNAME`, `ADMIN_PASSWORD`, `JWT_SECRET`, `GDRIVE_ROOT_FOLDER_ID`, `CORS_ORIGINS` and paste the contents of your local `credentials.json` and `token.json` into `GDRIVE_CREDS_JSON` and `GDRIVE_TOKEN_JSON`.
+
+**Admin UI on Vercel:** root directory `admin`, build command `npm run build`, output directory `dist`, and set `VITE_API_URL` to your backend URL.
+
+**Keep the free backend awake:** create an UptimeRobot HTTP(s) monitor for `https://<your-render-url>/health` every 14 minutes.
+
+**Flutter apps** (run from `app/`):
+
+```bash
+flutter build apk --release          # Android: app/build/app/outputs/flutter-apk/app-release.apk
+flutter build windows --release      # Windows: app/build/windows/x64/runner/Release/
+```
+
+For a Windows installer, compile `app/windows/inno_setup.iss` with Inno Setup. In the app, enter your server URL and log in with the admin credentials.
+
+## Tests
+
+There is no automated test suite in this repository, and none was run while writing this README.
+
+## Status and limitations
+
+- Personal project; works end to end for one user and one Drive library.
+- Single admin account with no per-user accounts; the backend falls back to development defaults for admin credentials and the JWT secret if environment variables are missing, so always set them.
+- SQLite on free hosting is rebuilt from Drive on each start, so play history and any other local-only data can be lost on redeploy.
+- Free Render hosting sleeps when idle; the first request can be slow.
+- The built admin UI is committed under `backend/static/`; rebuild it from `admin/` after UI changes.
+- Not tested here: the Flutter builds, Drive authorisation and the hosted deployment.
+
+## License
+
+No license specified.
